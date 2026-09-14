@@ -69,7 +69,7 @@ jobs:
       - name: Write private key to file
         run: |
           mkdir -p /tmp/ci_secrets
-          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/ci_secrets/rsa_key.p8
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY_B64 }}" | base64 -d > /tmp/ci_secrets/rsa_key.p8
 
       - name: Prepare profiles.yml for CI
         working-directory: dbt_project
