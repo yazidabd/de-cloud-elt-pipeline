@@ -51,3 +51,6 @@ loader/staging_tmp/
 
 # dbt user-level config, bukan bagian project
 dbt_project/.user.yml
+
+# personal access token GitHub, buat referensi push manual
+.credentials-local.md
