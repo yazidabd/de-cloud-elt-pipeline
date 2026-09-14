@@ -12,7 +12,7 @@ terraform {
 provider "snowflake" {
   authenticator = "JWT"
   private_key   = file(var.private_key_path)
-  role = var.admin_role
+  role          = var.admin_role
 }
 
 # warehouse terpisah dari warehouse default akun
@@ -50,14 +50,14 @@ resource "snowflake_stage" "raw_stage" {
 # bukan ACCOUNTADMIN, sesuai prinsip least privilege
 resource "snowflake_account_role" "loader_role" {
   provider = snowflake.securityadmin
-  name    = var.role_name
-  comment = "Role khusus buat proses ELT, cuma boleh akses database dan warehouse project ini"
+  name     = var.role_name
+  comment  = "Role khusus buat proses ELT, cuma boleh akses database dan warehouse project ini"
 }
 
 resource "snowflake_grant_privileges_to_account_role" "warehouse_usage" {
-  provider = snowflake.securityadmin
+  provider          = snowflake.securityadmin
   account_role_name = snowflake_account_role.loader_role.name
-  privileges = ["USAGE", "OPERATE"]
+  privileges        = ["USAGE", "OPERATE"]
   on_account_object {
     object_type = "WAREHOUSE"
     object_name = snowflake_warehouse.elt_wh.name
@@ -65,9 +65,9 @@ resource "snowflake_grant_privileges_to_account_role" "warehouse_usage" {
 }
 
 resource "snowflake_grant_privileges_to_account_role" "database_usage" {
-  provider = snowflake.securityadmin
+  provider          = snowflake.securityadmin
   account_role_name = snowflake_account_role.loader_role.name
-  privileges = ["USAGE", "CREATE SCHEMA"]
+  privileges        = ["USAGE", "CREATE SCHEMA"]
   on_account_object {
     object_type = "DATABASE"
     object_name = snowflake_database.elt_db.name
@@ -75,9 +75,9 @@ resource "snowflake_grant_privileges_to_account_role" "database_usage" {
 }
 
 resource "snowflake_grant_privileges_to_account_role" "raw_schema_privileges" {
-  provider = snowflake.securityadmin
+  provider          = snowflake.securityadmin
   account_role_name = snowflake_account_role.loader_role.name
-  privileges = ["USAGE", "CREATE TABLE", "CREATE STAGE"]
+  privileges        = ["USAGE", "CREATE TABLE", "CREATE STAGE"]
   on_schema {
     schema_name = "\"${snowflake_database.elt_db.name}\".\"${snowflake_schema.raw_schema.name}\""
   }
