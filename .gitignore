@@ -1,0 +1,53 @@
+# credential dan key, jangan pernah kecommit
+secrets/
+*.p8
+*.pem
+.env
+
+# virtual environment tiap komponen
+venv/
+*/venv/
+__pycache__/
+*.pyc
+
+# terraform state dan cache, isinya bisa ngandung data sensitif (state file)
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# dbt
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# hasil extract lokal, bukan kode, gak perlu ditrack
+extractor/landing/
+
+# koneksi dbt, ada credential di dalamnya
+dbt_project/profiles.yml
+
+# credential Airtable
+.env.airtable
+
+# state file order id counter, generated lokal
+extractor/order_id_counter.txt
+
+# Airflow local runtime state, bukan kode
+airflow/airflow.cfg
+airflow/airflow.db
+airflow/airflow.db-shm
+airflow/airflow.db-wal
+airflow/logs/
+airflow/simple_auth_manager_passwords.json.generated
+airflow/webserver_config.py
+
+# file sementara loader, hasil proses bukan kode
+loader/staging_tmp/
+
+# dbt user-level config, bukan bagian project
+dbt_project/.user.yml

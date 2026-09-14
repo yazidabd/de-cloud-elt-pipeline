@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: raw
+    database: ELT_PORTFOLIO
+    schema: RAW
+    tables:
+      - name: raw_products
+      - name: raw_orders

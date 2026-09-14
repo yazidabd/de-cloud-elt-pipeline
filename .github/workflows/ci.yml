@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-extractor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: extractor
+        run: pip install -r requirements.txt
+      - name: Run tests
+        working-directory: extractor
+        run: pytest tests/ -v
+
+  test-loader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system build dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libffi-dev libssl-dev
+      - name: Install dependencies
+        working-directory: loader
+        run: pip install -r requirements.txt
+      - name: Run tests
+        working-directory: loader
+        run: pytest tests/ -v
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Terraform fmt check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init -backend=false
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+  test-dbt:
+    runs-on: ubuntu-latest
+    needs: [test-loader]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dbt
+        working-directory: dbt_project
+        run: pip install -r requirements.txt
+
+      # private key disimpan sebagai GitHub Secret (isi file, bukan path),
+      # ditulis ke file sementara di runner supaya dbt bisa baca lewat private_key_path
+      - name: Write private key to file
+        run: |
+          mkdir -p /tmp/ci_secrets
+          echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" > /tmp/ci_secrets/rsa_key.p8
+
+      - name: Prepare profiles.yml for CI
+        working-directory: dbt_project
+        run: cp profiles.yml.ci profiles.yml
+
+      - name: dbt deps
+        working-directory: dbt_project
+        run: dbt deps
+
+      - name: dbt run
+        working-directory: dbt_project
+        env:
+          DBT_PROFILES_DIR: .
+          SNOWFLAKE_ORGANIZATION_NAME: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}
+          SNOWFLAKE_ACCOUNT_NAME: ${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+        run: dbt run
+
+      - name: dbt test
+        working-directory: dbt_project
+        env:
+          DBT_PROFILES_DIR: .
+          SNOWFLAKE_ORGANIZATION_NAME: ${{ secrets.SNOWFLAKE_ORGANIZATION_NAME }}
+          SNOWFLAKE_ACCOUNT_NAME: ${{ secrets.SNOWFLAKE_ACCOUNT_NAME }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+        run: dbt test

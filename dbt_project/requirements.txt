@@ -1,0 +1,2 @@
+dbt-core<2.0
+dbt-snowflake

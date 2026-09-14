@@ -1,0 +1,15 @@
+elt_cloud_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ORGANIZATION_NAME') }}-{{ env_var('SNOWFLAKE_ACCOUNT_NAME') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      role: ELT_LOADER_ROLE
+      database: ELT_PORTFOLIO
+      warehouse: ELT_PORTFOLIO_WH
+      schema: STAGING
+      threads: 4
+      authenticator: SNOWFLAKE_JWT
+      private_key_path: "/tmp/ci_secrets/rsa_key.p8"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE') }}"

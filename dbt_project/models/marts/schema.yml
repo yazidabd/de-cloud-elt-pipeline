@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_product
+    columns:
+      - name: product_id
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_order_items
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          # severity warn, bukan error: DummyJSON (sumber order) dan FakeStoreAPI (sumber dim_product)
+          # adalah dua API dummy independen dengan katalog produk yang gak saling terhubung,
+          # jadi wajar banyak product_id di order yang gak match ke dim_product.
+          # Ini keterbatasan data sumber, bukan bug pipeline, makanya cuma di-warn bukan digagalkan.
+          - relationships:
+              arguments:
+                to: ref('dim_product')
+                field: product_id
+              config:
+                severity: warn
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+  - name: agg_daily_sales_summary
+    columns:
+      - name: date_key
+        tests:
+          - unique
+          - not_null
