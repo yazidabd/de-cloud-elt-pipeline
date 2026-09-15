@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 import requests
 
+from schemas import validate_products
+
 FAKESTORE_API_URL = "https://fakestoreapi.com/products"
 
 
@@ -14,7 +16,14 @@ FAKESTORE_API_URL = "https://fakestoreapi.com/products"
 def fetch_products(api_url=FAKESTORE_API_URL, timeout=10):
     response = requests.get(api_url, timeout=timeout)
     response.raise_for_status()
-    return response.json()
+    raw_products = response.json()
+
+    # validasi schema di sini (fail-fast at the edge): kalau struktur API
+    # berubah, kita gagal sekarang dengan error jelas, bukan lolos ke
+    # loader/dbt dan bikin data korup yang lebih sulit dilacak sumbernya
+    validate_products(raw_products)
+
+    return raw_products
 
 
 # bungkus data mentah dengan metadata extraction_date

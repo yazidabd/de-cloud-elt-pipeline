@@ -10,7 +10,15 @@ import extract_orders
 
 
 def test_fetch_products_success():
-    fake_response = [{"id": 1, "title": "Test Product", "price": 10.5}]
+    fake_response = [{
+        "id": 1,
+        "title": "Test Product",
+        "price": 10.5,
+        "description": "A test product",
+        "category": "test category",
+        "image": "https://example.com/image.png",
+        "rating": {"rate": 4.0, "count": 10},
+    }]
     with requests_mock.Mocker() as m:
         m.get(extract_products.FAKESTORE_API_URL, json=fake_response)
         result = extract_products.fetch_products()
@@ -100,3 +108,39 @@ def test_products_parse_execution_date_with_value():
 def test_products_parse_execution_date_defaults_to_today():
     result = extract_products.parse_execution_date(None)
     assert len(result) == 10  # format YYYY-MM-DD
+
+
+def test_fetch_products_rejects_malformed_schema():
+    # simulasi API berubah struktur: price jadi string, bukan number
+    malformed_response = [{
+        "id": 1,
+        "title": "Test",
+        "price": "not_a_number",
+        "description": "desc",
+        "category": "cat",
+        "image": "url",
+        "rating": {"rate": 4.0, "count": 10},
+    }]
+    with requests_mock.Mocker() as m:
+        m.get(extract_products.FAKESTORE_API_URL, json=malformed_response)
+        try:
+            extract_products.fetch_products()
+            assert False, "harusnya gagal karena price bukan angka"
+        except Exception:
+            pass
+
+
+def test_fetch_products_accepts_valid_schema():
+    valid_response = [{
+        "id": 1,
+        "title": "Test",
+        "price": 10.5,
+        "description": "desc",
+        "category": "cat",
+        "image": "url",
+        "rating": {"rate": 4.0, "count": 10},
+    }]
+    with requests_mock.Mocker() as m:
+        m.get(extract_products.FAKESTORE_API_URL, json=valid_response)
+        result = extract_products.fetch_products()
+    assert result == valid_response

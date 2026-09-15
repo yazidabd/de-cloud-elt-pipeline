@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import requests
 import snowflake.connector
@@ -16,9 +17,10 @@ SCHEMA = "STAGING_MARTS"
 WAREHOUSE = "ELT_PORTFOLIO_WH"
 ROLE = "ELT_LOADER_ROLE"
 
+AIRTABLE_MAX_RECORDS_PER_REQUEST = 10  # batas resmi Airtable per API call
+MAX_RETRIES = 5
 
-# baca private key terenkripsi, sama persis caranya kayak di loader
-# supaya cara auth konsisten di semua komponen yang connect ke Snowflake
+
 def load_private_key():
     passphrase = os.environ["SNOWFLAKE_PRIVATE_KEY_PASSPHRASE"]
     with open(PRIVATE_KEY_PATH, "rb") as key_file:
@@ -46,8 +48,6 @@ def get_snowflake_connection():
     )
 
 
-# ambil seluruh baris agregat harian dari marts, dikonversi jadi list of dict
-# biar gampang dipetakan ke format field Airtable
 def fetch_daily_summary(conn):
     cursor = conn.cursor()
     cursor.execute("""
@@ -61,30 +61,6 @@ def fetch_daily_summary(conn):
     return rows
 
 
-# cari semua record yang udah ada di Airtable, dipetakan by date_key
-# supaya push berikutnya bisa update record lama, bukan bikin duplikat
-def fetch_existing_airtable_records(base_url, headers):
-    existing = {}
-    offset = None
-    while True:
-        params = {"pageSize": 100}
-        if offset:
-            params["offset"] = offset
-        response = requests.get(base_url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        payload = response.json()
-        for record in payload.get("records", []):
-            date_key = record.get("fields", {}).get("date_key")
-            if date_key:
-                existing[date_key] = record["id"]
-        offset = payload.get("offset")
-        if not offset:
-            break
-    return existing
-
-
-# konversi satu baris hasil query Snowflake jadi format field Airtable
-# date_key dikonversi ke string ISO karena Airtable field Date butuh format itu
 def to_airtable_fields(row):
     return {
         "date_key": row["date_key"].isoformat(),
@@ -95,30 +71,51 @@ def to_airtable_fields(row):
     }
 
 
-# upsert ke Airtable: PATCH kalau date_key udah ada record-nya, POST kalau belum
-def upsert_to_airtable(base_url, headers, rows, existing_records):
-    for row in rows:
-        fields = to_airtable_fields(row)
-        date_key = fields["date_key"]
+def chunk_list(items, size):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
 
-        if date_key in existing_records:
-            record_id = existing_records[date_key]
-            response = requests.patch(
-                f"{base_url}/{record_id}",
-                headers=headers,
-                json={"fields": fields},
-                timeout=10,
-            )
-        else:
-            response = requests.post(
-                base_url,
-                headers=headers,
-                json={"fields": fields},
-                timeout=10,
-            )
+
+# request wrapper dengan exponential backoff: kalau Airtable balikin 429 (rate limit)
+# atau error 5xx sementara, retry dengan jeda yang makin lama tiap percobaan
+# (1s, 2s, 4s, 8s, 16s), bukan langsung crash di percobaan pertama
+def request_with_backoff(method, url, headers, json_payload):
+    for attempt in range(MAX_RETRIES):
+        response = requests.request(method, url, headers=headers, json=json_payload, timeout=15)
+
+        if response.status_code == 429:
+            wait_seconds = 2 ** attempt
+            print(f"Rate limited (429), retry in {wait_seconds}s (attempt {attempt + 1}/{MAX_RETRIES})")
+            time.sleep(wait_seconds)
+            continue
+
+        if response.status_code >= 500:
+            wait_seconds = 2 ** attempt
+            print(f"Server error {response.status_code}, retry in {wait_seconds}s (attempt {attempt + 1}/{MAX_RETRIES})")
+            time.sleep(wait_seconds)
+            continue
 
         response.raise_for_status()
-        print(f"Pushed {date_key} to Airtable")
+        return response
+
+    raise RuntimeError(f"Gagal setelah {MAX_RETRIES} kali percobaan: {method} {url}")
+
+
+# upsert pakai endpoint batch resmi Airtable (performUpsert), sampai 10 record
+# per request. fieldsToMergeOn: ["date_key"] artinya Airtable sendiri yang
+# menentukan insert vs update berdasarkan kecocokan date_key, kita gak perlu
+# lagi fetch existing record manual seperti pendekatan sebelumnya
+def upsert_batch(base_url, headers, rows):
+    for batch in chunk_list(rows, AIRTABLE_MAX_RECORDS_PER_REQUEST):
+        payload = {
+            "performUpsert": {"fieldsToMergeOn": ["date_key"]},
+            "records": [{"fields": to_airtable_fields(row)} for row in batch],
+        }
+        response = request_with_backoff("PATCH", base_url, headers, payload)
+        result = response.json()
+        updated = len(result.get("updatedRecords", []))
+        created = len(result.get("createdRecords", []))
+        print(f"Batch pushed: {created} created, {updated} updated")
 
 
 def main():
@@ -138,8 +135,11 @@ def main():
     finally:
         conn.close()
 
-    existing_records = fetch_existing_airtable_records(base_url, headers)
-    upsert_to_airtable(base_url, headers, rows, existing_records)
+    if not rows:
+        print("Tidak ada data untuk di-push")
+        return
+
+    upsert_batch(base_url, headers, rows)
 
 
 if __name__ == "__main__":
