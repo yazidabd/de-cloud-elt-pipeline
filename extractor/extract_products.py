@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sys
@@ -38,15 +39,30 @@ def save_to_landing(record, output_dir):
     return filepath
 
 
+def parse_execution_date(date_str):
+    if date_str is None:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return date_str
+
+
 def main():
-    extraction_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--execution-date",
+        type=str,
+        default=None,
+        help="Tanggal eksekusi (YYYY-MM-DD), default hari ini. Dikirim Airflow via {{ ds }}.",
+    )
+    args = parser.parse_args()
+    extraction_date = parse_execution_date(args.execution_date)
+
     output_dir = os.path.join(os.path.dirname(__file__), "landing")
 
     products = fetch_products()
     record = build_extraction_record(products, extraction_date)
     filepath = save_to_landing(record, output_dir)
 
-    print(f"Extracted {record['record_count']} products to {filepath}")
+    print(f"Extracted {record['record_count']} products for {extraction_date} to {filepath}")
 
 
 if __name__ == "__main__":

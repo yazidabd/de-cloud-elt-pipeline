@@ -17,6 +17,10 @@ models:
 
   - name: fact_order_items
     columns:
+      - name: order_item_key
+        tests:
+          - unique
+          - not_null
       - name: product_id
         tests:
           - not_null

@@ -5,8 +5,6 @@ from airflow.providers.standard.operators.bash import BashOperator
 
 PROJECT_ROOT = "/home/tupay/PROJECT/de-cloud-elt-pipeline"
 
-# path venv tiap komponen, sengaja gak dijadiin satu venv gede
-# biar dependency tiap komponen tetap terisolasi (sesuai keputusan awal)
 EXTRACTOR_PYTHON = f"{PROJECT_ROOT}/extractor/venv/bin/python"
 LOADER_PYTHON = f"{PROJECT_ROOT}/loader/venv/bin/python"
 DBT_BIN = f"{PROJECT_ROOT}/dbt_project/venv/bin/dbt"
@@ -28,14 +26,24 @@ with DAG(
     tags=["portfolio", "cloud-elt", "snowflake"],
 ) as dag:
 
+    # {{ ds }} adalah logical_date run ini (format YYYY-MM-DD), bukan tanggal real-time
+    # saat task dieksekusi. Ini yang membuat backfill aman: menjalankan ulang run
+    # untuk tanggal 2026-09-10 akan selalu memproses data untuk tanggal itu,
+    # apapun kapan run tersebut benar-benar dieksekusi (hari ini atau 3 hari lagi)
     extract_products = BashOperator(
         task_id="extract_products",
-        bash_command=f"cd {PROJECT_ROOT}/extractor && {EXTRACTOR_PYTHON} extract_products.py",
+        bash_command=(
+            f"cd {PROJECT_ROOT}/extractor && "
+            f"{EXTRACTOR_PYTHON} extract_products.py --execution-date {{{{ ds }}}}"
+        ),
     )
 
     extract_orders = BashOperator(
         task_id="extract_orders",
-        bash_command=f"cd {PROJECT_ROOT}/extractor && {EXTRACTOR_PYTHON} extract_orders.py",
+        bash_command=(
+            f"cd {PROJECT_ROOT}/extractor && "
+            f"{EXTRACTOR_PYTHON} extract_orders.py --execution-date {{{{ ds }}}}"
+        ),
     )
 
     load_to_snowflake = BashOperator(

@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+from datetime import date
 
 import requests_mock
 
@@ -44,13 +45,13 @@ def test_save_to_landing_writes_valid_json():
         assert loaded == record
 
 
-# cek satu order sintetis punya struktur field yang benar dan total sesuai hitungan manual
 def test_generate_synthetic_order_structure():
     catalog = [
         {"id": 1, "title": "Product A", "price": 10.0},
         {"id": 2, "title": "Product B", "price": 20.0},
     ]
-    order = extract_orders.generate_synthetic_order(order_id=999, catalog=catalog)
+    rng = extract_orders.random.Random(42)
+    order = extract_orders.generate_synthetic_order(order_id=999, catalog=catalog, rng=rng)
 
     assert order["id"] == 999
     assert 1 <= order["totalProducts"] <= 2
@@ -60,31 +61,42 @@ def test_generate_synthetic_order_structure():
         assert item["total"] == round(item["price"] * item["quantity"], 2)
 
 
-# cek order_id nyambung dari state file, bukan reset ke 1 tiap kali dipanggil
-def test_order_id_continues_from_state_file():
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        state_file = os.path.join(tmp_dir, "order_id_counter.txt")
-        extract_orders.save_last_order_id(50, state_file=state_file)
-
-        next_start = extract_orders.get_next_order_id_start(state_file=state_file)
-        assert next_start == 51
-
-
-# cek generate_orders benar-benar update state file setelah generate
-def test_generate_orders_updates_state_file():
+# inti dari backfill-safety: tanggal yang sama harus selalu menghasilkan
+# jumlah order dan order_id yang identik, berapa kali pun dipanggil
+def test_generate_orders_for_date_is_deterministic():
     catalog = [{"id": 1, "title": "A", "price": 10.0}]
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        state_file = os.path.join(tmp_dir, "order_id_counter.txt")
+    execution_date = date(2026, 3, 15)
 
-        original_state_file = extract_orders.STATE_FILE
-        extract_orders.STATE_FILE = state_file
-        try:
-            orders = extract_orders.generate_orders(catalog, num_orders=5)
-            assert len(orders) == 5
-            assert orders[0]["id"] == 1
-            assert orders[4]["id"] == 5
+    run_1 = extract_orders.generate_orders_for_date(catalog, execution_date)
+    run_2 = extract_orders.generate_orders_for_date(catalog, execution_date)
 
-            with open(state_file) as f:
-                assert f.read().strip() == "5"
-        finally:
-            extract_orders.STATE_FILE = original_state_file
+    assert run_1 == run_2
+    assert len(run_1) > 0
+
+
+# tanggal berbeda harus punya order_id range yang berbeda (gak overlap),
+# supaya backfill banyak hari sekaligus gak menghasilkan ID yang bentrok
+def test_different_dates_produce_different_id_ranges():
+    catalog = [{"id": 1, "title": "A", "price": 10.0}]
+
+    orders_day1 = extract_orders.generate_orders_for_date(catalog, date(2026, 3, 15))
+    orders_day2 = extract_orders.generate_orders_for_date(catalog, date(2026, 3, 16))
+
+    day1_ids = {o["id"] for o in orders_day1}
+    day2_ids = {o["id"] for o in orders_day2}
+    assert day1_ids.isdisjoint(day2_ids)
+
+
+def test_parse_execution_date():
+    parsed = extract_orders.parse_execution_date("2026-03-15")
+    assert parsed == date(2026, 3, 15)
+
+
+def test_products_parse_execution_date_with_value():
+    result = extract_products.parse_execution_date("2026-03-15")
+    assert result == "2026-03-15"
+
+
+def test_products_parse_execution_date_defaults_to_today():
+    result = extract_products.parse_execution_date(None)
+    assert len(result) == 10  # format YYYY-MM-DD
